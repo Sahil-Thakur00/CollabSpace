@@ -1,0 +1,46 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* vars are baked in at build time — must be args, not env
+        - NEXT_PUBLIC_API_URL=http://localhost:8080
+        - NEXT_PUBLIC_WS_URL=http://localhost:8080
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - '8080:8080'
+    environment:
+      # Use internal docker network name for MongoDB
+      - MONGODB_URI=mongodb://mongo:27017/collabspace
+      - JWT_SECRET_KEY=collabspace-docker-secret-change-in-production
+      - JWT_EXPIRATION_HOURS=24
+      - PORT=8080
+      # Allow both docker-internal and host access
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7-jammy
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+    driver: local
