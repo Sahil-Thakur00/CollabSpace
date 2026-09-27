@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -17,11 +17,30 @@ const httpServer = http.createServer(app);
 const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000')
   .split(',').map((o) => o.trim());
 
-app.use(cors({ origin: corsOrigins, credentials: true }));
+const originValidator = (origin, callback) => {
+  // Allow requests without an origin (curl, mobile, server-side)
+  if (!origin) return callback(null, true);
+
+  if (
+    corsOrigins.includes('*') ||
+    origin.endsWith('.vercel.app') ||
+    origin.includes('localhost') ||
+    origin.includes('127.0.0.1') ||
+    corsOrigins.some(
+      (o) => origin === o || origin === `https://${o}` || origin === `http://${o}`
+    )
+  ) {
+    return callback(null, true);
+  }
+
+  return callback(new Error('Not allowed by CORS'));
+};
+
+app.use(cors({ origin: originValidator, credentials: true }));
 app.use(express.json());
 
 const io = new Server(httpServer, {
-  cors: { origin: corsOrigins, methods: ['GET', 'POST'], credentials: true },
+  cors: { origin: originValidator, methods: ['GET', 'POST'], credentials: true },
 });
 
 app.locals.io = io;
