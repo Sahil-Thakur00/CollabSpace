@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Cookies from 'universal-cookie';
 import { getBoards, createBoard, importBoard, BoardWithMembers } from '@/api/board';
+import { deleteCurrentUser, getUserByJwt } from '@/api';
 import Board from '@/components/board';
 import { COOKIE_NAME_JWT_TOKEN } from '@/constants';
 import ImportBoardModal from '@/components/modals/importBoard';
 import toast from 'react-hot-toast';
-import { FaPlus, FaDownload, FaThLarge, FaUserFriends } from 'react-icons/fa';
+import { FaPlus, FaDownload, FaThLarge, FaUserFriends, FaSignOutAlt, FaChevronDown } from 'react-icons/fa';
 import { BASE_URL } from '@/constants';
 
 function BoardSkeleton() {
@@ -36,6 +37,10 @@ export default function DashboardPage() {
   const [fetching, setFetching] = useState(true);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [isGuest, setIsGuest] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchBoards() {
@@ -46,9 +51,16 @@ export default function DashboardPage() {
         return;
       }
       try {
-        const data = await getBoards(jwtToken);
+        const [data, user] = await Promise.all([
+          getBoards(jwtToken),
+          getUserByJwt(jwtToken).catch(() => null),
+        ]);
         setBoards(data.owned);
         setSharedBoards(data.shared);
+        if (user) {
+          setUserName(user.name || 'User');
+          setIsGuest(!!(user as any).is_guest);
+        }
       } catch (err: any) {
         if (err?.status === 401 || err?.message?.includes('token') || err?.message?.includes('Not authenticated')) {
           cookies.remove(COOKIE_NAME_JWT_TOKEN, { path: '/' });
@@ -63,6 +75,29 @@ export default function DashboardPage() {
     }
     fetchBoards();
   }, [router]);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    const cookies = new Cookies();
+    if (isGuest) {
+      try {
+        const token = cookies.get(COOKIE_NAME_JWT_TOKEN);
+        if (token) await deleteCurrentUser(token);
+      } catch {}
+    }
+    cookies.remove(COOKIE_NAME_JWT_TOKEN, { path: '/' });
+    router.push('/');
+  };
 
   const handleCreateBoard = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -129,6 +164,43 @@ export default function DashboardPage() {
             >
               <FaPlus className="text-xs" /> New Board
             </button>
+
+            {/* User menu */}
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setShowUserMenu((v) => !v)}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 hover:border-indigo-300 transition-all text-sm font-medium text-gray-700"
+              >
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                  style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+                >
+                  {userName ? userName[0].toUpperCase() : '?'}
+                </div>
+                <span className="hidden sm:inline max-w-[100px] truncate">{userName || 'Account'}</span>
+                {isGuest && (
+                  <span className="hidden sm:inline px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-600 font-medium">Guest</span>
+                )}
+                <FaChevronDown className="text-xs text-gray-400" />
+              </button>
+
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50">
+                  <div className="px-4 py-2 border-b border-gray-100">
+                    <p className="text-xs text-gray-400">Signed in as</p>
+                    <p className="text-sm font-semibold text-gray-800 truncate">{userName}</p>
+                    {isGuest && <p className="text-xs text-amber-500 mt-0.5">Guest account</p>}
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    <FaSignOutAlt />
+                    {isGuest ? 'Leave & Delete Account' : 'Logout'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
